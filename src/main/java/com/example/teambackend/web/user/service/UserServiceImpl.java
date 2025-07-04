@@ -135,14 +135,12 @@ public class UserServiceImpl implements UserService {
     @Override
     public List<UserBalanceDto> getBalanceSortedByBalance() {
         List<Object[]> results = userRepository.findBalanceFromCMIUsers();
-        DecimalFormat df = new DecimalFormat("#.##");
 
         return results.stream()
                 .map(result -> {
                     String username = (String) result[0];
                     Double balance = (Double) result[1];
-                    String formattedBalance = df.format(balance);
-                    return new UserBalanceDto(username, formattedBalance);
+                    return new UserBalanceDto(username, balance);
                 })
                 .collect(Collectors.toList());
     }
@@ -161,8 +159,47 @@ public class UserServiceImpl implements UserService {
             throw new InvalidCredentialsException("탈퇴한 회원입니다.");
         }
 
-        String token = jwtProvider.generateToken(user.getUsername(), user.getRole());
-        return new LoginResponseDto(token);
+        String accessToken = jwtProvider.generateAccessToken(user.getUsername(), user.getRole());
+        
+        return LoginResponseDto.builder()
+                .accessToken(accessToken)
+                .username(user.getUsername())
+                .role(user.getRole())
+                .build();
+    }
+    
+    @Transactional
+    @Override
+    public String generateRefreshToken(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new CustomUserNotFoundException("사용자를 찾을 수 없습니다."));
+                
+        return jwtProvider.generateRefreshToken(user.getUsername());
+    }
+    
+    @Transactional
+    @Override
+    public TokenRefreshResponseDto refreshAccessToken(String refreshToken) {
+        // Refresh Token 유효성 검사
+        if (!jwtProvider.validateRefreshToken(refreshToken)) {
+            throw new CustomUserNotFoundException("유효하지 않은 Refresh Token입니다.");
+        }
+        
+        // Refresh Token에서 username 추출
+        String username = jwtProvider.getUsernameFromRefreshToken(refreshToken);
+        
+        // 사용자 확인
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new CustomUserNotFoundException("사용자를 찾을 수 없습니다."));
+                
+        if (!user.isActive()) {
+            throw new InvalidCredentialsException("탈퇴한 회원입니다.");
+        }
+        
+        // 새로운 Access Token 발급
+        String newAccessToken = jwtProvider.generateAccessToken(user.getUsername(), user.getRole());
+        
+        return new TokenRefreshResponseDto(newAccessToken);
     }
 
     @Transactional

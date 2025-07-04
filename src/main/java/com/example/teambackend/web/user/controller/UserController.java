@@ -8,7 +8,9 @@ import com.example.teambackend.web.user.domain.User;
 import com.example.teambackend.web.user.dto.*;
 import com.example.teambackend.web.user.service.UserService;
 import com.example.teambackend.common.util.UserUtils;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -38,8 +40,35 @@ public class UserController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponseDto> login(@RequestBody LoginRequestDto request) {
-        return ResponseEntity.ok(userService.login(request));
+    public ResponseEntity<LoginResponseDto> login(@RequestBody LoginRequestDto request,
+                                                  HttpServletResponse response) {
+        LoginResponseDto loginResponse = userService.login(request);
+        
+        // Refresh Token 발급
+        String refreshToken = userService.generateRefreshToken(loginResponse.getUsername());
+        
+        // Refresh Token을 httpOnly 쿠키로 설정
+        Cookie refreshTokenCookie = new Cookie("refreshToken", refreshToken);
+        refreshTokenCookie.setHttpOnly(true);
+        refreshTokenCookie.setSecure(true); // HTTPS에서만 사용
+        refreshTokenCookie.setPath("/");
+        refreshTokenCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
+        response.addCookie(refreshTokenCookie);
+        
+        return ResponseEntity.ok(loginResponse);
+    }
+    
+    @PostMapping("/refresh")
+    public ResponseEntity<TokenRefreshResponseDto> refreshToken(
+            @CookieValue(name = "refreshToken", required = false) String refreshToken) {
+        
+        if (refreshToken == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(null);
+        }
+        
+        TokenRefreshResponseDto responseDto = userService.refreshAccessToken(refreshToken);
+        return ResponseEntity.ok(responseDto);
     }
 
 
@@ -66,18 +95,12 @@ public class UserController {
         UserPasswordChangeResponseDto userPasswordChangeResponseDto = userService.updatePassword(userDetails.getUser().getId(), requestDto,ip);
         return ResponseEntity.status(HttpStatus.OK).body(userPasswordChangeResponseDto);
     }
-
+//
     @GetMapping("/me")
-    public ResponseEntity<UserWithBalanceResponseDto> myInfo(@AuthenticationPrincipal UserDetailsImp userDetails) {
+    public ResponseEntity<UserResponseDto> myInfo(@AuthenticationPrincipal UserDetailsImp userDetails) {
         // 사용자 정보 가져오기
         UserResponseDto user = userService.getUserById(userDetails.getUser().getId());
-
-        // balance 정보 가져오기 (서비스에서 이미 null 체크 및 기본값 0.0 처리)
-        Double balance = userService.getBalanceForUser(userDetails.getUser().getUsername());
-
-
-
-        return ResponseEntity.ok(new UserWithBalanceResponseDto(user, balance));
+        return ResponseEntity.ok(user);
     }
 
 
@@ -91,7 +114,7 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.OK).body(deactivateUserResponseDto);
     }
 
-    @GetMapping("/balances")
+    @GetMapping("/balance")
     public ResponseEntity<List<UserBalanceDto>> getBalances() {
         List<UserBalanceDto> balances = userService.getBalanceSortedByBalance();
         return ResponseEntity.ok(balances);
@@ -107,9 +130,6 @@ public class UserController {
         String ip = IpUtils.getClientIp(request);
         return ResponseEntity.ok(userService.adminSignup(dto,ip));
     }
-
-
-
 
 
 

@@ -44,8 +44,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     throw new JwtException("로그아웃된 토큰입니다.");
                 }
 
-                // 유효한 토큰이면 인증 처리
-                if (jwtProvider.validateToken(token)) {
+                // 유효한 Access Token이면 인증 처리
+                if (jwtProvider.validateAccessToken(token)) {
                     String username = jwtProvider.getUsername(token);
 
                     User user = userRepository.findByUsername(username)
@@ -62,13 +62,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
 
         } catch (ExpiredJwtException e) {
-            setErrorResponse(response, "EXPIRED_JWT", "토큰이 만료되었습니다.");
+            log.debug("토큰이 만료되었습니다: {}", e.getMessage());
+            // SecurityContext를 비우고 필터 체인 계속 진행 (Spring Security가 401 처리)
+            SecurityContextHolder.clearContext();
+            filterChain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException e) {
-            setErrorResponse(response, "INVALID_JWT", "유효하지 않은 JWT입니다.");
+            log.debug("유효하지 않은 JWT: {}", e.getMessage());
+            // SecurityContext를 비우고 필터 체인 계속 진행 (Spring Security가 401 처리)
+            SecurityContextHolder.clearContext();
+            filterChain.doFilter(request, response);
         } catch (CustomUserNotFoundException e) {
-            setErrorResponse(response, "USER_NOT_FOUND", "아이디가 존재하지 않습니다.");
+            log.debug("사용자를 찾을 수 없습니다: {}", e.getMessage());
+            // SecurityContext를 비우고 필터 체인 계속 진행 (Spring Security가 401 처리)
+            SecurityContextHolder.clearContext();
+            filterChain.doFilter(request, response);
         } catch (Exception e) {
-            setErrorResponse(response, "UNAUTHORIZED", "로그인이 필요합니다.");
+            log.error("JWT 인증 처리 중 오류 발생: {}", e.getMessage());
+            // SecurityContext를 비우고 필터 체인 계속 진행 (Spring Security가 401 처리)
+            SecurityContextHolder.clearContext();
+            filterChain.doFilter(request, response);
         }
     }
 

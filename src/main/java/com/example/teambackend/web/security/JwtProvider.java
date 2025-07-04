@@ -18,22 +18,56 @@ public class JwtProvider {
 
     @Value("${jwt.secret-key}")
     private String secretKeyString;
+    
+    @Value("${jwt.refresh-secret-key}")
+    private String refreshSecretKeyString;
 
     private Key secretKey;
+    private Key refreshSecretKey;
 
-    @Value("${jwt.secret-time}")
-    private long EXPIRATION_TIME;
+    @Value("${jwt.access-token-expiration}")
+    private long ACCESS_TOKEN_EXPIRATION = 15 * 60 * 1000; // 15분
+    
+    @Value("${jwt.refresh-token-expiration}")
+    private long REFRESH_TOKEN_EXPIRATION = 7 * 24 * 60 * 60 * 1000; // 7일
 
     @PostConstruct
     public void init() {
         this.secretKey = Keys.hmacShaKeyFor(secretKeyString.getBytes());
+        this.refreshSecretKey = Keys.hmacShaKeyFor(refreshSecretKeyString.getBytes());
     }
 
     /**
-     * 기본 만료 시간으로 토큰 발급
+     * Access Token 발급
      */
-    public String generateToken(String username, Role role) {
-        return generateToken(username, role, EXPIRATION_TIME);
+    public String generateAccessToken(String username, Role role) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + ACCESS_TOKEN_EXPIRATION);
+
+        return Jwts.builder()
+                .setSubject(username)
+                .claim("role", role.name())
+                .claim("type", "access")
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(secretKey, SignatureAlgorithm.HS256)
+                .compact();
+    }
+    
+    /**
+     * Refresh Token 발급
+     */
+    public String generateRefreshToken(String username) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + REFRESH_TOKEN_EXPIRATION);
+
+        return Jwts.builder()
+                .setSubject(username)
+                .claim("type", "refresh")
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(refreshSecretKey, SignatureAlgorithm.HS256)
+                .compact();
     }
 
     /**
@@ -66,16 +100,28 @@ public class JwtProvider {
     }
 
     /**
-     * 토큰 유효성 검사 (만료 여부 포함)
+     * Access Token 유효성 검사
      */
-    public boolean validateToken(String token) {
+    public boolean validateAccessToken(String token) {
         try {
-            Claims claims = parseClaims(token);
-            return !claims.getExpiration().before(new Date());
+            Claims claims = parseClaimsWithKey(token, secretKey);
+            return !claims.getExpiration().before(new Date()) && "access".equals(claims.get("type"));
         } catch (ExpiredJwtException e) {
-            throw e; // 필터에서 따로 처리
+            throw e;
         } catch (JwtException | IllegalArgumentException e) {
-            throw new InvalidTokenException("유효하지 않은 JWT입니다.");
+            throw new InvalidTokenException("유효하지 않은 Access Token입니다.");
+        }
+    }
+    
+    /**
+     * Refresh Token 유효성 검사
+     */
+    public boolean validateRefreshToken(String token) {
+        try {
+            Claims claims = parseClaimsWithKey(token, refreshSecretKey);
+            return !claims.getExpiration().before(new Date()) && "refresh".equals(claims.get("type"));
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new InvalidTokenException("유효하지 않은 Refresh Token입니다.");
         }
     }
 
@@ -102,17 +148,32 @@ public class JwtProvider {
      * Claims 파싱 (공통 처리용)
      */
     private Claims parseClaims(String token) {
+        return parseClaimsWithKey(token, secretKey);
+    }
+    
+    /**
+     * 특정 키로 Claims 파싱
+     */
+    private Claims parseClaimsWithKey(String token, Key key) {
         try {
             return Jwts.parserBuilder()
-                    .setSigningKey(secretKey)
+                    .setSigningKey(key)
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
         } catch (ExpiredJwtException e) {
-            return e.getClaims(); // 만료됐어도 claims 추출 가능
+            return e.getClaims();
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidTokenException("JWT 파싱 실패");
         }
+    }
+    
+    /**
+     * Refresh Token에서 username 추출
+     */
+    public String getUsernameFromRefreshToken(String token) {
+        Claims claims = parseClaimsWithKey(token, refreshSecretKey);
+        return claims.getSubject();
     }
     public Key getSecretKey() {
         return this.secretKey;

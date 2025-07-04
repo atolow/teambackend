@@ -34,7 +34,7 @@ public class User extends TimeBaseEntity {
     @Column(nullable = false)
     private Integer cash;
 
-    private double balances;
+    private double balance;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

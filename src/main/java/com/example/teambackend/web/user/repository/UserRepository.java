@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,7 +25,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByPhoneNumber(String phoneNumber);
 
     @Query(value = "SELECT o.balance FROM CMI_users o WHERE o.username = :username", nativeQuery = true)
-    Double findBalanceByUsername(@Param("username") String username);
+    double findBalanceByUsername(@Param("username") String username);
 
 
     @Query(value = "SELECT c.username, c.balance " +

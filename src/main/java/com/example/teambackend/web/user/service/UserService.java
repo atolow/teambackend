@@ -16,6 +16,8 @@ public interface UserService {
 
     UserResponseDto adminSignup(UserCreateRequestDto request,String clientIp);
     LoginResponseDto login(LoginRequestDto request);
+    String generateRefreshToken(String username);
+    TokenRefreshResponseDto refreshAccessToken(String refreshToken);
     UserResponseDto grantAdminRole(User userDetails,String clientIp);
 
     Double getBalanceForUser(String username);
